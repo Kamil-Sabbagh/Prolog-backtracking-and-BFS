@@ -1,0 +1,146 @@
+start((1,1)).
+x_upper_bound(9).
+y_upper_bound(9).
+ 
+:- dynamic home/1.
+:- dynamic mask/1.
+:- dynamic covid/1.
+:- dynamic doctor/1.
+ 
+%gives the adjacent cells
+neighborhood(_,[],[]).
+neighborhood((X,Y),[(XS,YS)|Tail],Result) :-
+    NewX is X+XS, NewY is Y+YS,
+    neighborhood((X,Y),Tail,ResultTail),
+    Result = [(NewX,NewY)|ResultTail].
+ 
+%checks if the cell is in bounds
+inTheMap((X,Y)) :-
+	x_upper_bound(MAXX), y_upper_bound(MAXY),
+	X =< MAXX,
+	Y =< MAXY,
+	X >= 1,
+	Y >= 1.
+ 
+%appends a list to another list
+append([],X,X).
+append([Head|Tail],X,Result) :- 
+	append(Tail,X,NewTail), 
+	Result = [Head | NewTail].
+ 
+%keeps only the valid moves 
+validMoves(_,[],[]).
+validMoves(Visited,[Head|Tail],Result) :-
+	inTheMap(Head),
+	\+ member(Head,Visited),
+	\+ covid(Head),
+	validMoves(Visited,Tail,NewTail),
+	Result = [Head|NewTail].
+ 
+validMoves(Visited,[Head|Tail],Result) :-
+	covid(Head),
+	validMoves(Visited,Tail,Result).
+ 
+validMoves(Visited,[Head|Tail],Result) :-
+	\+ inTheMap(Head),
+	validMoves(Visited,Tail,Result).
+ 
+validMoves(Visited,[Head|Tail],Result) :-
+	member(Head,Visited),
+	validMoves(Visited,Tail,Result).
+ 
+parent(Cell,Parent,[[Cell,Parent]|_]).
+parent(Cell,Parent,[[DiffCell,_]|Tail]) :- 
+	Cell \= DiffCell,
+	parent(Cell,Parent,Tail).
+ 
+generateSteps(Current,PathStart,Parents,Result) :-
+	parent(Current,Parent,Parents),
+	generateSteps(Parent,PathStart,Parents,NewResult),
+	Result = [Current | NewResult].
+ 
+generateSteps(PathStart,PathStart,_,[PathStart]).
+ 
+addCurrentAsParent(Current,[Head|Tail],Result) :- 
+	addCurrentAsParent(Current,Tail,NewTail),
+	Result = [[Head,Current]|NewTail].
+addCurrentAsParent(_,[],[]).
+ 
+ 
+%the main function of the bfs algorithm
+bfs([Home|_],Home,_,[]).
+ 
+bfs([(X,Y)|Queue],Home,Visited,Parents) :-
+	NewVisited = [(X,Y)|Visited],
+	(X,Y) \= Home,
+ 
+	List = [(0,1),(0,-1),(1,0),(1,1),(1,-1),(-1,0),(-1,1),(-1,-1)],
+    neighborhood((X,Y),List,Neighbors),
+ 
+ 
+	validMoves(Visited,Neighbors,ValidNeighbors),
+	append(Queue,Neighbors,ExtendedQueue),
+	validMoves(Visited,ExtendedQueue,[Next|NewQueue]),
+ 
+	bfs([Next|NewQueue],Home,NewVisited,Tail),
+	addCurrentAsParent((X,Y),ValidNeighbors,NewParents),
+	append(NewParents,Tail,Parents).
+ 
+%calls bfs and finds the path
+solveWithBFS(Start,Home,Path) :-
+	bfs([Start],Home,[],Parents),
+	generateSteps(Home,Start,Parents,ReversedPath),
+	reverse(ReversedPath,Path),
+	write(Path).
+ 
+ 
+%These functions check if a cell is infected with covid
+covidNeighborhoodV1([(0,0),(0,1),(0,-1),(1,0),(1,1),(1,-1),(-1,0),(-1,1),(-1,-1)]).
+ 
+ 
+checkCovidCells(_,[]).
+checkCovidCells((X,Y),[(XS,YS)|Tail]) :-
+	NewX is X+XS, NewY is Y+YS,
+	\+ covid((NewX,NewY)),
+	checkCovidCells((X,Y),Tail).
+ 
+covidFreeV1((X,Y)) :-
+	covidNeighborhoodV1(List),
+	checkCovidCells((X,Y),List).
+ 
+ 
+%the following code generates a random map
+ 
+object(Cell) :- (home(Cell);\+covidFreeV1(Cell);mask(Cell);start(Cell);doctor(Cell)).
+rand_coord((X,Y)) :-
+	x_upper_bound(UpperX),
+	y_upper_bound(UpperY),
+	random(0,UpperX,RandX),
+	random(0,UpperY,RandY),
+	((X is RandX+1, Y is RandY+1, \+ object((X,Y)))  ;  rand_coord((X,Y))).
+ 
+gen_cov((X,Y)):-
+	rand_coord((X,Y)),
+	(X>2,Y>2);gen_cov((X,Y)).
+ 
+generate:-
+	retractall(covid), retractall(home),retractall(mask),retractall(doctor),
+	gen_cov(C1), assert(covid(C1)),
+	gen_cov(C2), assert(covid(C2)),
+	rand_coord(H), assert(home(H)),
+	rand_coord(M), assert(mask(M)),
+	rand_coord(D), assert(doctor(D)),
+	write("Home:"), writeln(H),
+	write("Covid:"), writeln(C1),
+	write("Covid:"), writeln(C2),
+	write("Mask:"), writeln(M),
+	write("Doctor:"), writeln(D).
+ 
+ 
+%function to call to initiate the program
+testFunction:-
+	generate,
+	start(Actor),
+	home(Home),
+	time(solveWithBFS(Actor,Home,Path)).
+ 
